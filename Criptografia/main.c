@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #define INIT 0
 #define NORMAL 1
@@ -594,27 +595,184 @@ void stream(uint32_t *ZH, uint32_t * ZL) {
     *ZH = NLF(B[10], L2, L1, A[0]);
     *ZL = NLF(B[0], R2, R1, A[4]);
 }
+void encrypt(FILE* in, FILE* out) {
 
-int main(void) {
+    uint32_t zh, zl;
+    uint32_t buffer[2];
+
+    //EL PRIMER BYTE DEL ARCHIVO DE SALIDA CONTIENE
+    //EL TAMAÑO DEL ARCHIVO ORIGINAL
+    long int size;
+    if (fseek(in, 0, SEEK_END)) {
+        printf("fallo fseek");
+        exit (EXIT_FAILURE);
+    }
+    if ((size = ftell(in)) == -1L) {
+        printf("fallo ftell");
+        exit (EXIT_FAILURE);
+    }
+    if (fwrite(&size, sizeof(long int), 1, out) != 1) {
+        printf("ocurrio un error mientras se escribia el archivo de salida");
+        exit (EXIT_FAILURE);
+    }
+
+    //VOLVEMOS AL PRINCIPIO DEL ARCHIVO DE ENTRADA
+    if (fseek(in, 0, SEEK_SET)) {
+        printf("fallo fseek");
+        exit (EXIT_FAILURE);
+    }
+
+    for(;;) {
+        int read;
+        if ((read = fread(buffer, 1, 8, in)) != 8) {
+            if (feof(in) && !read) {
+                break;
+            }
+            if (ferror(in)) {
+                printf("ocurrio un error mientras se leia el archivo de entrada");
+                exit (EXIT_FAILURE);
+            }
+
+            //ACA ESTAMOS EN EL CASO EN EL QUE EL TAMAÑO DEL ARCHIVO NO ES
+            //MULTIPLO DE 64 BITS. HAY QUE RELLENAR CON CEROS
+            int i;
+            for (i = read; i < 8; i++) {
+                ((uint8_t*)&buffer)[i] = 0;
+            }
+
+            /*
+            for (i = 0; i < 8; i++) {
+                printf("%d\n", ((uint8_t*)&buffer)[i]);
+            }
+            */
+        }
+
+        stream(&zh, &zl);
+        buffer[0] ^= zh;
+        buffer[1] ^= zl;
+
+        if (fwrite(buffer, 1, 8, out) != 8) {
+            if (ferror(out)) {
+                printf("ocurrio un error mientras se escribia el archivo de salida");
+                exit (EXIT_FAILURE);
+            }
+        }
+
+        next(NORMAL);
+    }
+}
+
+void desencrypt (FILE* in, FILE* out) {
+
+    uint32_t zh, zl;
+    uint32_t buffer[2];
+
+    //LEO EL TAMAÑO DEL ARCHIVO ORIGINAL
+    long int size;
+    if (fread(&size, sizeof(long int), 1, in) != 1) {
+        printf("ocurrio un error mientras se leia el archivo de entrada");
+        exit (EXIT_FAILURE);
+    }
+
+    for(;;) {
+        int read;
+        if ((read = fread(buffer, 1, 8, in)) != 8) {
+            if (feof(in) && !read) {
+                break;
+            }
+            if (ferror(in)) {
+                printf("ocurrio un error mientras se leia el archivo de entrada");
+                exit (EXIT_FAILURE);
+            } else {
+                //SE SUPONE QUE EL TAMAÑO DEL ARCHIVO DE ENTRADA (QUE HA SIDO CIFRADO)
+                //ES MULTIPLO DE 64 BITS POR LO TANTO SI ESTE ARCHIVO NO LO ES
+                //ENTONCES NO SE HA CIDRADO O HUBO UN ERROR AL CIFRARLO
+                printf("archivo invalido");
+                exit (EXIT_FAILURE);
+            }
+        }
+
+        stream(&zh, &zl);
+        buffer[0] ^= zh;
+        buffer[1] ^= zl;
+
+        int toWrite = size > 8 ? 8 : size;
+        if (size - 8 > 0) {
+            size -= 8;
+        }
+
+        if (fwrite(buffer, toWrite, 1, out) != 1) {
+            if (ferror(out)) {
+                printf("ocurrio un error mientras se escribia el archivo de salida");
+                exit (EXIT_FAILURE);
+            }
+        }
+
+        next(NORMAL);
+    }
+}
+
+int main(int argc, char *argv[]) {
+
+    //PROTOTIPO
+    //exec_name -e [file]
+    //exec_name -d [file]
+    if (argc != 3) {
+        printf("se esperaban 3 argumentos");
+        return EXIT_FAILURE;
+    }
+
+    if (strcmp(argv[1], "-d") && strcmp(argv[1], "-e")) {
+        printf("no se reconoce el argumento %s", argv[1]);
+        return EXIT_FAILURE;
+    }
+
+    char outputfileName[1024];
+    strcpy(outputfileName, argv[2]);
+    if (!strcmp(argv[1], "-e")) {
+        //EL NOMBRE DEL ARCHIVO FINAL RESULTA DE CONCATENAR
+        //EL NOMBRE DEL ARCHIVO DE ENTRADA CON LA EXTENSION
+        //.kc2
+        strcat(outputfileName, ".kc2");
+    } else {
+        //CUANDO DESCIFRO EL NOMBRE DEL ARCHIVO DE
+        //ENTRADA TIENE QUE TENER LA EXTENSION .kc2,
+        //EL ARCHIVO DE SALIDA TIENE QUE TENER EL NOMBRE ORIGINAL
+        //POR ESO LE SACO LA EXTENSION
+        if (!strstr(outputfileName, ".kc2")) {
+            printf("no es un archivo valido para descifrar");
+            return EXIT_FAILURE;
+        }
+        outputfileName[strlen(argv[2]) - 4] = '\0';
+    }
+
+    FILE* inputfile = fopen(argv[2], "rb");
+    if (!inputfile) {
+        printf("no se puede abrir el archivo de entrada");
+        return EXIT_FAILURE;
+    }
+
+    FILE* outputfile = fopen(outputfileName, "wb");
+    if (!outputfile) {
+        printf("fallo al crear el archivo de salida");
+        return EXIT_FAILURE;
+    }
+
     // Set the key and the iv
     uint32_t key[4] = {00000000,00000000, 00000000, 00000000};
     uint32_t iv[4] = {00000000, 00000000, 00000000, 00000000};
     init(key, iv);
 
-    printf("%p ", key);
-    printf("%p\n", iv);
-    
-    uint32_t zh, zl;
-    int i;
-    for(i = 0 ; i < 8 ; i++) {
-        stream(&zh, &zl);
-        printf("%x ", zh);
-        printf("%x\n", zl);
-        next(NORMAL);
+    if (!strcmp(argv[1], "-e")) {
+        encrypt(inputfile, outputfile);
+    } else {
+        desencrypt(inputfile, outputfile);
     }
 
+    fclose(inputfile);
+    fclose(outputfile);
     return EXIT_SUCCESS;
-
 }
+
 
 
