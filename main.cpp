@@ -2,6 +2,8 @@
 #include"OGLUtils.h"
 #include"KCipher2.h"
 #include<stdexcept>
+#include<chrono>
+#include<thread>
 #include<array>
 
 extern "C" {
@@ -122,11 +124,14 @@ int main(int argc, char** argv)
     uint32_t iv[4] = { 00000000, 00000000, 00000000, 00000000 };
     init(key, iv);
     /**********************************************************************************/
-
+    auto init = std::chrono::high_resolution_clock::now();
+    long stepTime = 1000*(1000.0f/av_q2d(videoStream->r_frame_rate));
+    /**********************************************************************************/
     OGLWindowEvent event;
     int width = 0;
     int height = 0;
     bool cifrar = false;
+    code = 0;
     oglwindow.show();
 
     for(;;) {
@@ -167,80 +172,88 @@ int main(int argc, char** argv)
             break;
         }
 
-        AVPacket packet;
-        while(av_read_frame(avFormatContext, &packet) >= 0) {
+        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
 
-            bool exit = false;
-            int frameFinished;
-            if(packet.stream_index == videoStreamIdx) {
-                avcodec_decode_video2(avCC, avFrame, &frameFinished, &packet);
-                if(frameFinished) {
-                    sws_scale(swsContext, avFrame->data, avFrame->linesize, 0, avCC->height, avRGBFrame->data, avRGBFrame->linesize);
-                    /**********************************************************************************/
-                    if (cifrar) {
-                        operar(avRGBFrame->data[0], numBytes*sizeof(uint8_t));
+        if (code >= 0) {
+            AVPacket packet;
+            while((code = av_read_frame(avFormatContext, &packet)) >= 0) {
+                bool exit = false;
+                int frameFinished;
+                if(packet.stream_index == videoStreamIdx) {
+                    avcodec_decode_video2(avCC, avFrame, &frameFinished, &packet);
+                    if(frameFinished) {
+                        sws_scale(swsContext, avFrame->data, avFrame->linesize, 0, avCC->height, avRGBFrame->data, avRGBFrame->linesize);
+                        /**********************************************************************************/
+                        if (cifrar) {
+                            operar(avRGBFrame->data[0], numBytes*sizeof(uint8_t));
+                        }
+                        /**********************************************************************************/
+                        glEnable(GL_TEXTURE_2D);
+                        glBindTexture(GL_TEXTURE_2D, texture);
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, avCC->width, avCC->height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, avRGBFrame->data[0]);
+
+                        glBegin(GL_QUADS);
+
+                        if (avCC->width/(float)avCC->height > width/(float)height) {
+                            int newHeight = (width*avCC->height)/avCC->width;
+                            int topY = (height - newHeight)/2.0f;
+                            int buttomY = topY + newHeight;
+                            /*abajo-izq*/
+                            glTexCoord2f(0.0f, 0.0f);
+                            glVertex2f(-1.0f, -1.0f + 2.0f*(buttomY/(float)height));
+                            /*abajo-der*/
+                            glTexCoord2f(1.0f, 0.0f);
+                            glVertex2f(1.0f, -1.0f + 2.0f*(buttomY/(float)height));
+                            /*arriba-der*/
+                            glTexCoord2f(1.0f, 1.0f);
+                            glVertex2f(1.0f, -1.0f + 2.0f*(topY/(float)height));
+                            /*arriba-izq*/
+                            glTexCoord2f(0.0f, 1.0f);
+                            glVertex2f(-1.0f, -1.0f + 2.0f*(topY/(float)height));
+
+                        } else {
+                            int newWidth = (height*avCC->width)/avCC->height;
+                            int xLeft = (width - newWidth)/2.0f;
+                            int xRight = xLeft + newWidth;
+                            /*abajo-izq*/
+                            glTexCoord2f(0.0f, 0.0f);
+                            glVertex2f(-1.0f + 2.0f*(xLeft/(float)width), 1.0f);
+                            /*abajo-der*/
+                            glTexCoord2f(1.0f, 0.0f);
+                            glVertex2f(-1.0f + 2.0f*(xRight/(float)width), 1.0f);
+                            /*arriva-der*/
+                            glTexCoord2f(1.0f, 1.0f);
+                            glVertex2f(-1.0f + 2.0f*(xRight/(float)width), -1.0f);
+                            /*arriba-izq*/
+                            glTexCoord2f(0.0f, 1.0f);
+                            glVertex2f(-1.0f + 2.0f*(xLeft/(float)width), -1.0f);
+                        }
+                        glEnd();
+                        /**********************************************************************************/
+                        exit = true;
                     }
-
-                    /**********************************************************************************/
-                    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                    glClear(GL_COLOR_BUFFER_BIT);
-                    glEnable(GL_TEXTURE_2D);
-                    glBindTexture(GL_TEXTURE_2D, texture);
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, avCC->width, avCC->height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, avRGBFrame->data[0]);
-
-                    glBegin(GL_QUADS);
-
-                    if (avCC->width/(float)avCC->height > width/(float)height) {
-                        int newHeight = (width*avCC->height)/avCC->width;
-                        int topY = (height - newHeight)/2.0f;
-                        int buttomY = topY + newHeight;
-                        /*abajo-izq*/
-                        glTexCoord2f(0.0f, 0.0f);
-                        glVertex2f(-1.0f, -1.0f + 2.0f*(buttomY/(float)height));
-                        /*abajo-der*/
-                        glTexCoord2f(1.0f, 0.0f);
-                        glVertex2f(1.0f, -1.0f + 2.0f*(buttomY/(float)height));
-                        /*arriba-der*/
-                        glTexCoord2f(1.0f, 1.0f);
-                        glVertex2f(1.0f, -1.0f + 2.0f*(topY/(float)height));
-                        /*arriba-izq*/
-                        glTexCoord2f(0.0f, 1.0f);
-                        glVertex2f(-1.0f, -1.0f + 2.0f*(topY/(float)height));
-
-                    } else {
-                        int newWidth = (height*avCC->width)/avCC->height;
-                        int xLeft = (width - newWidth)/2.0f;
-                        int xRight = xLeft + newWidth;
-                        /*abajo-izq*/
-                        glTexCoord2f(0.0f, 0.0f);
-                        glVertex2f(-1.0f + 2.0f*(xLeft/(float)width), 1.0f);
-                        /*abajo-der*/
-                        glTexCoord2f(1.0f, 0.0f);
-                        glVertex2f(-1.0f + 2.0f*(xRight/(float)width), 1.0f);
-                        /*arriva-der*/
-                        glTexCoord2f(1.0f, 1.0f);
-                        glVertex2f(-1.0f + 2.0f*(xRight/(float)width), -1.0f);
-                        /*arriba-izq*/
-                        glTexCoord2f(0.0f, 1.0f);
-                        glVertex2f(-1.0f + 2.0f*(xLeft/(float)width), -1.0f);
-                    }
-                    glEnd();
-                    /**********************************************************************************/
-                    exit = true;
+                }
+                av_free_packet(&packet);
+                if (exit) {
+                    break;
                 }
             }
-            av_free_packet(&packet);
-            if (exit) {
-                break;
+
+            init += std::chrono::microseconds(stepTime);
+            auto dif = init - std::chrono::high_resolution_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(dif).count() > 0) {
+                std::this_thread::sleep_for(dif);
             }
         }
 
         glXSwapBuffers(display, glxWindow);
     }
 
+    glDeleteTextures(1, &texture);
     glXMakeCurrent(display, 0, 0);
     glXDestroyContext(display, context);
-    glDeleteTextures(1, &texture);
+    glXDestroyWindow(display, glxWindow);
     sws_freeContext(swsContext);
     av_free(buffer);
     av_free(avFrame);
