@@ -16,15 +16,26 @@ extern "C" {
 
 int main(int argc, char** argv)
 {
-    if (argc != 2) {
+    if (argc != 2 && argc != 3) {
         throw std::runtime_error("se esperaba un argumento");
+    }
+    /************************************************************************************************/
+    int indx;
+    bool repeat = false;
+    if (argc == 2) {
+        indx = 1;
+    } else {
+        indx = 2;
+        if (!strcmp(argv[1], "-r")) {
+            repeat = true;
+        }
     }
     /************************************************************************************************/
     int code;
     av_register_all();
     AVFormatContext* avFormatContext = NULL;
 
-    code = avformat_open_input(&avFormatContext, argv[1], NULL, NULL);
+    code = avformat_open_input(&avFormatContext, argv[indx], NULL, NULL);
     if (code < 0) {
         std::array<char, 1024> error;
         av_strerror(code, error.data(), 1024);
@@ -91,7 +102,7 @@ int main(int argc, char** argv)
     }
     /************************************************************************************************/
     OGLWindowDescription desc;
-    desc.title = argv[1];
+    desc.title = argv[indx];
     desc.width = avCC->width;
     desc.height = avCC->height;
     desc.x = 0.5f*(utils::getDesktopWidth() - desc.width);
@@ -124,7 +135,7 @@ int main(int argc, char** argv)
     uint32_t iv[4] = { 00000000, 00000000, 00000000, 00000000 };
     init(key, iv);
     /**********************************************************************************/
-    auto init = std::chrono::high_resolution_clock::now();
+    auto initTime = std::chrono::high_resolution_clock::now();
     long stepTime = 1000*(1000.0f/av_q2d(videoStream->r_frame_rate));
     /**********************************************************************************/
     OGLWindowEvent event;
@@ -186,6 +197,9 @@ int main(int argc, char** argv)
                         sws_scale(swsContext, avFrame->data, avFrame->linesize, 0, avCC->height, avRGBFrame->data, avRGBFrame->linesize);
                         /**********************************************************************************/
                         if (cifrar) {
+                            if (repeat) {
+                                init(key, iv);
+                            }
                             operar(avRGBFrame->data[0], numBytes*sizeof(uint8_t));
                         }
                         /**********************************************************************************/
@@ -240,8 +254,8 @@ int main(int argc, char** argv)
                 }
             }
 
-            init += std::chrono::microseconds(stepTime);
-            auto dif = init - std::chrono::high_resolution_clock::now();
+            initTime += std::chrono::microseconds(stepTime);
+            auto dif = initTime - std::chrono::high_resolution_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(dif).count() > 0) {
                 std::this_thread::sleep_for(dif);
             }
